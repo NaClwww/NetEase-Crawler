@@ -49,6 +49,27 @@ def get_params(d):
     encSecKey = RSA_encrypt(i, e, f)  # RSA加密后获得encSecKey
     return params, encSecKey
 
+def get_unikey():
+    url = 'https://music.163.com/weapi/login/qrcode/unikey'
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+        }
+
+    data = {
+        "type": "1"
+        }
+
+    d = json.dumps(data)
+
+    params, encSecKey = get_params(d)
+
+    response = requests.post(url, headers=headers, data={'params': params, 'encSecKey': encSecKey})
+
+    res = response.json()
+
+    print(res)
+
+    return res.get('unikey')
 
 def show_qrcode(unikey):
     # 提取您想要转成二维码的字段，比如 token
@@ -58,7 +79,7 @@ def show_qrcode(unikey):
     qr = qrcode.QRCode(
         version=1,  # 设置二维码的版本
         error_correction=qrcode.constants.ERROR_CORRECT_L,  # 设置错误修正级别
-        box_size=2,  # 每个格子的像素大小
+        box_size=10,  # 每个格子的像素大小
         border=4,  # 边框的大小
     )
     qr.add_data(data)
@@ -66,28 +87,56 @@ def show_qrcode(unikey):
 
     # 创建二维码图像
     img = qr.make_image(fill="black", back_color="white")
-
-    ascii_chars = ['█', ' ']
-    width, height = img.size
-    img = img.resize((width // 2, height // 2))
-    pixels = img.load()
-
-    for y in range(height // 2):
-        for x in range(width // 2):
-            print(ascii_chars[pixels[x, y] == 0], end='')
-        print()
+    img.save("qrcode.png")
+    img.show()
 
 def login():
-    url = 'https://music.163.com/weapi/login/cellphone'
+    unikey=get_unikey()
+    show_qrcode(unikey)
+    print("等待扫码")
+    while(True):
+        res,headers=checking_login(unikey)
+        if res['code']==803:
+            print("二维码已失效")
+            break
+        elif res['code']==800:
+            print("扫码成功")
+            break
+        else:
+            time.sleep(0.5)
+    print(headers)
+    return headers['set-cookie']
+
+def checking_login(unikey):
+    url = 'https://music.163.com/weapi/login/qrcode/client/login?csrf_token='
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:95.0) Gecko/20100101 Firefox/95.0',
+    'Referer': 'https://music.163.com/',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    }
+    
+    data = {
+        "csrf_token": "",
+        "key": unikey,
+        "type": "1"
+        }
+
+    d = json.dumps(data)
+
+    params, encSecKey = get_params(d)
+    response = requests.post(url, headers=headers, data={'params': params, 'encSecKey': encSecKey})
+
+    res_headers = response.headers
+
+    res_body = response.json()
+
+    return res_body,res_headers
 
 
-
-def get_list_info(list_id):
+def get_list_info(list_id,cookie):
     url = f'https://music.163.com/api/playlist/detail?id={list_id}'
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3','cookie':'MUSIC_U=00F16AA467062F2E08CD607249D5407A039BEF704AE78092DFA9164470FC705221D794237972DD5AAD2D92E734393C4C3CC7193263872CF0A98E243F6942DDFC71794E82FF87971B5F2C2044089B943E87611D738DB6122C2D883C3658407DE15A5837D4D5E07149AC4EC1C61E4294FE2E2BEB6A640461702834C77F2C28EE954510457C865D6A79FFC61195984A6F49FDBA10F48AE63F1837335B013F9AF1C391E4D5C0D5F84F2DAB72F61D602F934CA57F5FA5E6632E9757460721920591FC9EE33774F65132EDE9AA04AF8BBA15775FA83D10BED48C3B660011A9D6A39B5EE1E7BF324E5282946C1976F421F9C8443AA99A17C9B6425EAC88F4DAD41136C5D49B054C2F6D4E763541381B57C7A75F450F555D11D71DB9A23019F4941A7A3E4C3DD46CBA1A6204BA155B4BFD235466C7E488F852A960C4861B28C5D540B7CD3EDBCF9E198F006246382FD36CE82FDD8A006194A63E2C6B33C3F508D567F915A9'}
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3','cookie':cookie}
     
     response = requests.get(url, headers=headers)
     if response.status_code != 200:
@@ -99,14 +148,14 @@ def get_list_info(list_id):
     data = response.json()
     return data
 
-def get_song_id(list_id):
+def get_song_id(list_id,cookie):
     print("getting song id")
-    list_info = get_list_info(list_id)
+    list_info = get_list_info(list_id,cookie)
     while(list_info['code']!=200):
         print(list_info)
         print(list_info['code'])
         time.sleep(0.5)
-        list_info = get_list_info(list_id)
+        list_info = get_list_info(list_id,cookie)
     playlist = list_info['result']['tracks']
     print(f'find {len(playlist)} songs')
     with open('MusicId.txt', 'w') as f:
@@ -115,4 +164,21 @@ def get_song_id(list_id):
     print("done")
 
 if __name__ == "__main__":
-    show_qrcode("77dc0e20-658d-46eb-a366-ef2dbacad1c6")
+    try:
+        with open('cookie.txt', 'r') as cookie:
+            user_cookie = cookie.read()
+    except FileNotFoundError:
+        user_cookie = ''
+
+    if user_cookie == '':
+        user_cookie = login()
+        with open('cookie.txt', 'w') as cookie:
+            cookie.write(user_cookie)
+
+    list_id = '2681578911'
+    print("cookie:", user_cookie)
+    user_cookie = user_cookie.split(';')
+    u_cookie = max(cookie for cookie in user_cookie if 'MUSIC_U' in cookie)
+    u_cookie = u_cookie.split(',')[1].strip()
+    print(type(u_cookie))
+    get_song_id(list_id, u_cookie)
